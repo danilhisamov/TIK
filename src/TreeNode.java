@@ -81,7 +81,10 @@ public class TreeNode implements Comparable<TreeNode>{
         if (isLeaf()) {
             return values.get(0).getKey().replace("\n", "\\n").replace("\r", "\\r") + ": " + values.get(0).getValue();
         }
-        return p.toString();
+        if (p != null)
+            return p.toString();
+        else
+            return "";
     }
 
     public TreeNode merge(TreeNode treeNode) {
