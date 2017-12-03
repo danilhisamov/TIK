@@ -1,20 +1,24 @@
 import org.apache.commons.lang.StringUtils;
 
 import java.io.*;
+import java.math.BigDecimal;
 import java.util.*;
 import java.util.stream.Collectors;
 
 public class Main {
-    private static double charsCount = 0D;
     private static long lng;
     private static String code = "";
     private static String left = "";
     private static Boolean prevR = false;
     private static int txt = 0;
     private static final Integer[] textLength = {0}; //кол-во символов в тексте
+    private static Integer neededTextLenght;
 
 
     public static void main(String[] args) throws IOException {
+//        neededTextLenght = 1000;
+        System.out.println("Требуемое кол-во символов: " + neededTextLenght);
+
         SortedMap<String, Double> chars = new TreeMap<>(); // мап для обычной энтропии
         SortedMap<String, Double> dMap = new TreeMap<>(); // для условной энтропии с учетом 1-го пред. символа
         SortedMap<String, Double> dMapUsl = new TreeMap<>();
@@ -24,7 +28,7 @@ public class Main {
             int c;
             String prev = null; // хранит пред. символ для dMap
             String prev2 = ""; // хранит 2 пред символа для trMap
-            while ((c = reader.read()) != -1) {
+            while ((c = reader.read()) != -1  && (neededTextLenght == null || textLength[0] < neededTextLenght)) {
                 String textChar = String.valueOf((char) c);
 
                 chars.putIfAbsent(textChar, 0D); // если в мапе нет значения для такого ключа, кладем туда 0
@@ -70,7 +74,7 @@ public class Main {
 
         final Double[] uslEntropy = {0D};
 
-        dMap.forEach((key, value) -> dMap.put(key, value / (textLength[0] - 1D)));// ключ - аб, получаем P(ба) = N(aб) / кол-во парных сочетаний
+        dMap.forEach((key, value) -> dMap.put(key, value / (textLength[0] - 1)));// ключ - аб, получаем P(ба) = N(aб) / кол-во парных сочетаний
 
         dMap.forEach((key, value) -> { // на вход приходит строка аб допустим
             Double pbla = value / chars.get(key.substring(0, 1)); // chars содержит вероятности каждого символа (P(б|а) = P(ба) делится на P(a))
@@ -83,7 +87,7 @@ public class Main {
 
         final Double[] entropy2 = {0D};
         trMap.forEach((key, value) -> {
-            Double pvba = value / (textLength[0] - 2D); //P(вба) = N(абв) / кол-во тройных сочетаний
+            Double pvba = value / (textLength[0] - 2); //P(вба) = N(абв) / кол-во тройных сочетаний
             Double pvlba = pvba / dMap.get(key.substring(0, 2)); // P(в|ба) = P(вба) / P(ба)
             entropy2[0] += pvba * (Math.log(pvlba) / Math.log(2D));
         });
@@ -99,6 +103,112 @@ public class Main {
         codeDecodeHaffman(chars, 1, "Haffman_1");
         System.out.println("Кодирование Хаффман учет условной вероятности букв");
         codeDecodeHaffman(dMap, 2, "Haffman_2");
+
+        arithmeticEncoding(chars);
+    }
+
+    public static void arithmeticEncoding(SortedMap<String, Double> chars) {
+        SortedMap<String, MathNode> mMap = new TreeMap<>();
+        final BigDecimal[] prev = {new BigDecimal(0)};
+
+        chars.forEach((key, value) -> {
+            BigDecimal high = prev[0].add(new BigDecimal(value)).setScale(16, BigDecimal.ROUND_HALF_UP);
+            mMap.put(key, new MathNode(prev[0], high));
+            prev[0] = high;
+        });
+
+        BigDecimal oldLow = new BigDecimal(0);
+        BigDecimal oldHigh = new BigDecimal(1);
+
+        StringBuilder res = new StringBuilder();
+
+        try (FileReader reader = new FileReader("in.txt")) {
+            int c;
+            int count = 0;
+            while ((c = reader.read()) != -1 && count < textLength[0]) {
+                String textChar = String.valueOf((char) c);
+                count++;
+
+                oldLow = getLow(oldLow, oldHigh, mMap, textChar);
+                oldHigh = getHigh(oldLow, oldHigh, mMap, textChar);
+
+                String similar = getEqualsPart(oldLow, oldHigh);
+                if (StringUtils.isNotBlank(similar)) {
+                    res.append(similar);
+
+                    BigDecimal toMult = new BigDecimal(pow(10, similar.length()));
+                    BigDecimal toMinus = new BigDecimal(similar);
+                    oldLow = oldLow.multiply(toMult).subtract(toMinus).setScale(16, BigDecimal.ROUND_HALF_UP);
+                    oldHigh = oldHigh.multiply(toMult).subtract(toMinus).setScale(16, BigDecimal.ROUND_HALF_UP);
+                }
+            }
+
+            res.append(oldLow.toString().substring(2));
+
+            File file = new File("arithmetic_" + textLength[0] + ".bin");
+//            try (FileWriter dos = new FileWriter(file)) {
+            try (DataOutputStream dos = new DataOutputStream(new FileOutputStream(file))) {
+                long lng = 0L;
+                String resStr = res.toString();
+                int lastInd = 0;
+                while (StringUtils.isNotBlank(resStr)) {
+                    boolean catchError = false;
+
+                    for (int i = 1; i < resStr.length() + 1; i++) {
+                        lastInd = i;
+                        try {
+                            lng = Long.parseLong(resStr.substring(0, i));
+                        } catch (Exception e) {
+                            catchError = true;
+                            break;
+                        }
+                    }
+
+                    dos.writeLong(lng);
+                    resStr = resStr.substring(lastInd - 1);
+                    lng = 0;
+
+                    if (!catchError) {
+                        break;
+                    }
+                }
+
+//                dos.write(resStr);
+                dos.flush();
+                dos.close();
+            }
+
+            Long fileLenBits = file.length() * 8;
+            System.out.println("Арифметическое кодирование (" + textLength[0] + " символов). Бит на символ = " + fileLenBits.doubleValue() / textLength[0]);
+        } catch (IOException ex) {
+            System.out.println(ex.getMessage());
+        }
+    }
+
+    private static int pow(int osn, int len) {
+        int res = osn;
+        for (int i = 1; i < len; i++) {
+            res *= osn;
+        }
+
+        return res;
+    }
+
+    private static BigDecimal getHigh(BigDecimal oldLow, BigDecimal oldHigh, Map<String, MathNode> map, String s) {
+        BigDecimal dif = oldHigh.subtract(oldLow).setScale(16, BigDecimal.ROUND_HALF_UP);
+        return oldLow.add(dif.multiply(map.get(s).getHigh())).setScale(16, BigDecimal.ROUND_HALF_UP);
+    }
+
+    private static BigDecimal getLow(BigDecimal oldLow, BigDecimal oldHigh, Map<String, MathNode> map, String s) {
+        BigDecimal dif = oldHigh.subtract(oldLow).setScale(16, BigDecimal.ROUND_HALF_UP);
+        return oldLow.add(dif.multiply(map.get(s).getLow())).setScale(16, BigDecimal.ROUND_HALF_UP);
+    }
+
+    private static String getEqualsPart(BigDecimal bd1, BigDecimal bd2) {
+        String bd1Str = bd1.toString().substring(2);
+        String bd2Str = bd2.toString().substring(2);
+
+        return StringUtils.getCommonPrefix(new String[]{bd1Str, bd2Str});
     }
 
     private static void buildLong2() {
@@ -229,7 +339,7 @@ public class Main {
 
         buildTree(root, 1D, "", codes);
 
-        codes.forEach((key, value) -> System.out.println(key.replace("\n", "\\n").replace("\r", "\\r") + ": " + value));
+//        codes.forEach((key, value) -> System.out.println(key.replace("\n", "\\n").replace("\r", "\\r") + ": " + value));
 
         encodeFile(len, fileName, root);
         code = "";
@@ -256,12 +366,13 @@ public class Main {
     }
 
     public static void encodeFile(int len, String fileName, TreeNode root) {
+        txt = 0;
         try (FileReader reader = new FileReader("in.txt")) {
             File codedFile = new File("coded" + fileName + ".bin");
             try (DataOutputStream dos = new DataOutputStream(new FileOutputStream(codedFile))) {
                 int c;
                 String tmpTextChar = "";
-                while ((c = reader.read()) != -1) {
+                while ((c = reader.read()) != -1 && txt < textLength[0]) {
                     String textChar = tmpTextChar + String.valueOf((char) c);
                     if (textChar.length() < len) {
                         tmpTextChar += textChar;
@@ -270,9 +381,9 @@ public class Main {
 
                     txt++;
 
-                    if (txt % 100000 == 0) {
-                        System.out.println(txt);
-                    }
+//                    if (txt % 100000 == 0) {
+//                        System.out.println(txt);
+//                    }
 
                     String gettedCharCode = getCharCode(textChar, root, "");
 
@@ -289,7 +400,7 @@ public class Main {
                     tmpTextChar = "";
                 }
 
-                System.out.println(txt);
+//                System.out.println(txt);
                 txt = 0;
 
                 code = left;
@@ -310,7 +421,7 @@ public class Main {
 
                 Long bits = codedFile.length() * 8;
 
-                System.out.println("Бит на символ = " + (bits / textLength[0] + (bits.doubleValue() % textLength[0]) / textLength[0]));
+                System.out.println("Бит на символ = " + bits.doubleValue() / textLength[0]);
             }
         } catch (IOException ignored) {
 
