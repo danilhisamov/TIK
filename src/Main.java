@@ -345,6 +345,7 @@ public class Main {
         code = "";
         left = "";
         decodeFile(fileName, root);
+        //dsfjsdjfj
     }
 
     private static void codeDecodeHaffman(SortedMap<String, Double> chars, int len, String fileName) {
