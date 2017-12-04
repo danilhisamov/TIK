@@ -19,7 +19,7 @@ public class Main {
 
 
     public static void main(String[] args) throws IOException {
-        neededTextLenght = 1000;
+        neededTextLenght = 500000;
         System.out.println("Требуемое кол-во символов: " + neededTextLenght);
 
         SortedMap<String, Double> chars = new TreeMap<>(); // мап для обычной энтропии
@@ -207,9 +207,9 @@ public class Main {
                 String textChar = String.valueOf((char) c);
                 count++;
                 
-                BigDecimal dif2 = oldHigh.subtract(oldLow);
-                newLow = oldLow.add(dif2.multiply(mMap.get(textChar).getLow()));
-                newHigh = oldLow.add(dif2.multiply(mMap.get(textChar).getHigh()));
+                BigDecimal dif = oldHigh.subtract(oldLow);
+                newLow = oldLow.add(dif.multiply(mMap.get(textChar).getLow())).setScale(32, BigDecimal.ROUND_FLOOR);
+                newHigh = oldLow.add(dif.multiply(mMap.get(textChar).getHigh())).setScale(32, BigDecimal.ROUND_CEILING);
 
                 String similar = getEqualsPart(newLow, newHigh);
                 if (StringUtils.isNotBlank(similar)) {
@@ -217,18 +217,17 @@ public class Main {
 
                     BigDecimal toMult = new BigDecimal(pow(10, similar.length()));
                     BigDecimal toMinus = new BigDecimal(similar);
-                    newLow = newLow.multiply(toMult).subtract(toMinus);
-                    newHigh = newHigh.multiply(toMult).subtract(toMinus);
+                    newLow = newLow.multiply(toMult).subtract(toMinus).setScale(32, BigDecimal.ROUND_FLOOR);
+                    newHigh = newHigh.multiply(toMult).subtract(toMinus).setScale(32, BigDecimal.ROUND_CEILING);
                 }
                 
 
                 oldLow = newLow;
                 oldHigh = newHigh;
             }
-            
+
 
             res.append(oldLow.setScale(32, BigDecimal.ROUND_HALF_UP).unscaledValue());
-            
             File file = new File("arithmetic_" + textLength[0] + ".bin");
             FileOutputStream fos = new FileOutputStream(file);
             fos.write(new BigDecimal(res.toString()).unscaledValue().toByteArray());
