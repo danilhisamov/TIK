@@ -198,7 +198,7 @@ public class Main {
         BigDecimal newLow;
         BigDecimal newHigh;
 
-//        StringBuilder res = new StringBuilder();
+        StringBuilder res = new StringBuilder();
 
         try (FileReader reader = new FileReader("in.txt")) {
             int c;
@@ -206,22 +206,32 @@ public class Main {
             while ((c = reader.read()) != -1 && count < textLength[0]) {
                 String textChar = String.valueOf((char) c);
                 count++;
+                
+                BigDecimal dif2 = oldHigh.subtract(oldLow);
+                newLow = oldLow.add(dif2.multiply(mMap.get(textChar).getLow()));
+                newHigh = oldLow.add(dif2.multiply(mMap.get(textChar).getHigh()));
 
-                BigDecimal dif = oldHigh.subtract(oldLow);
-                newLow = oldLow.add(dif.multiply(mMap.get(textChar).getLow()));
-                newHigh = oldLow.add(dif.multiply(mMap.get(textChar).getHigh()));
+                String similar = getEqualsPart(newLow, newHigh);
+                if (StringUtils.isNotBlank(similar)) {
+                    res.append(similar);
+
+                    BigDecimal toMult = new BigDecimal(pow(10, similar.length()));
+                    BigDecimal toMinus = new BigDecimal(similar);
+                    newLow = newLow.multiply(toMult).subtract(toMinus);
+                    newHigh = newHigh.multiply(toMult).subtract(toMinus);
+                }
+                
 
                 oldLow = newLow;
                 oldHigh = newHigh;
             }
+            
 
-            String similar = getEqualsPart(oldLow, oldHigh);
-            oldLow = oldLow.setScale(similar.length() + 3, BigDecimal.ROUND_HALF_UP);
-
-            System.out.println(similar.length() + 3);
+            res.append(oldLow.setScale(32, BigDecimal.ROUND_HALF_UP).unscaledValue());
+            
             File file = new File("arithmetic_" + textLength[0] + ".bin");
             FileOutputStream fos = new FileOutputStream(file);
-            fos.write(oldLow.unscaledValue().toByteArray());
+            fos.write(new BigDecimal(res.toString()).unscaledValue().toByteArray());
             System.out.println("Арифметическое кодирование (" + textLength[0] + " символов ): " + (double)(file.length() * 8) / textLength[0]);
         } catch (IOException ex) {
             System.out.println(ex.getMessage());
