@@ -19,7 +19,7 @@ public class Main {
 
 
     public static void main(String[] args) throws IOException {
-        neededTextLenght = 500000;
+        neededTextLenght = 1000;
         System.out.println("Требуемое кол-во символов: " + neededTextLenght);
 
         SortedMap<String, Double> chars = new TreeMap<>(); // мап для обычной энтропии
@@ -113,23 +113,25 @@ public class Main {
 //        codeDecodeHaffman(dMap, 2, "Haffman_2");
 
         arithmeticEncoding(charsMap);
-//        adaptiveEncoding(chars);
+        adaptiveEncoding(charsMap);
     }
 
-    public static void adaptiveEncoding(SortedMap<String, Double> chars) {
-        ExecutorService threadPool = Executors.newFixedThreadPool(8);
-        SortedMap<String, Double> charsCopy = new TreeMap<>(chars);
-        SortedMap<String, Double> countMap = new TreeMap<>(chars);
+    public static void adaptiveEncoding(SortedMap<String, Integer> chars) {
+        SortedMap<String, BigDecimal> charsCopy = new TreeMap<>();
+        SortedMap<String, Integer> countMap = new TreeMap<>();
         SortedMap<String, MathNode> mMap = new TreeMap<>();
 
         final Integer[] charCount = {chars.size()};
-        charsCopy.forEach((key, value) -> {
-            charsCopy.put(key, 1D / charCount[0]);
-            countMap.put(key, 1D);
+        chars.forEach((key, value) -> {
+            charsCopy.put(key, new BigDecimal(1).divide(new BigDecimal(charCount[0]), 32, BigDecimal.ROUND_HALF_UP));
+            countMap.put(key, 1);
         });
 
         BigDecimal oldLow = new BigDecimal(0);
         BigDecimal oldHigh = new BigDecimal(1);
+
+        BigDecimal newLow;
+        BigDecimal newHigh;
 
         StringBuilder res = new StringBuilder();
 
@@ -137,9 +139,13 @@ public class Main {
             int c;
             int count = 0;
             while ((c = reader.read()) != -1 && count < textLength[0]) {
+                chars.forEach((key, value) -> {
+                    charsCopy.put(key, new BigDecimal(countMap.get(key)).divide(new BigDecimal(charCount[0]), 32, BigDecimal.ROUND_HALF_UP));
+                });
+
                 final BigDecimal[] prev = {new BigDecimal(0)};
                 charsCopy.forEach((key, value) -> {
-                    BigDecimal high = prev[0].add(new BigDecimal(value)).setScale(16, BigDecimal.ROUND_HALF_UP);
+                    BigDecimal high = prev[0].add(value).setScale(32, BigDecimal.ROUND_HALF_UP);
                     mMap.put(key, new MathNode(prev[0], high));
                     prev[0] = high;
                 });
@@ -149,9 +155,8 @@ public class Main {
                 count++;
 
                 BigDecimal dif = oldHigh.subtract(oldLow);
-
-                BigDecimal newLow = getLow(oldLow, oldHigh, mMap, textChar);
-                BigDecimal newHigh = getHigh(oldLow, oldHigh, mMap, textChar);
+                newLow = oldLow.add(dif.multiply(mMap.get(textChar).getLow())).setScale(32, BigDecimal.ROUND_FLOOR);
+                newHigh = oldLow.add(dif.multiply(mMap.get(textChar).getHigh())).setScale(32, BigDecimal.ROUND_CEILING);
 
                 String similar = getEqualsPart(newLow, newHigh);
                 if (StringUtils.isNotBlank(similar)) {
@@ -159,8 +164,8 @@ public class Main {
 
                     BigDecimal toMult = new BigDecimal(pow(10, similar.length()));
                     BigDecimal toMinus = new BigDecimal(similar);
-                    newLow = newLow.multiply(toMult).subtract(toMinus).setScale(16, BigDecimal.ROUND_HALF_UP);
-                    newHigh = newHigh.multiply(toMult).subtract(toMinus).setScale(16, BigDecimal.ROUND_HALF_UP);
+                    newLow = newLow.multiply(toMult).subtract(toMinus).setScale(32, BigDecimal.ROUND_HALF_UP);
+                    newHigh = newHigh.multiply(toMult).subtract(toMinus).setScale(32, BigDecimal.ROUND_HALF_UP);
                 }
 
                 oldLow = newLow;
@@ -168,16 +173,14 @@ public class Main {
 
                 charCount[0]++;
                 countMap.put(textChar, countMap.get(textChar) + 1);
-
-                charsCopy.forEach((key, value) -> {
-                    charsCopy.put(key, countMap.get(key) / charCount[0]);
-                });
             }
 
             File file = new File("adaptive_" + textLength[0] + ".bin");
-            res.append(oldLow.toString().substring(2));
+            res.append(oldLow.setScale(32, BigDecimal.ROUND_HALF_UP).unscaledValue());
 
-            writeResToFile(res.toString(), file, false);
+            FileOutputStream fos = new FileOutputStream(file);
+            fos.write(new BigDecimal(res.toString()).unscaledValue().toByteArray());
+            System.out.println("Адаптивное кодирование (" + textLength[0] + " символов ): " + (double)(file.length() * 8) / textLength[0]);
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -189,7 +192,7 @@ public class Main {
         final BigDecimal[] prev = {new BigDecimal(0)};
 
         chars.forEach((key, value) -> {
-            BigDecimal high = prev[0].add(new BigDecimal(value).divide(new BigDecimal(textLength[0]), 16, BigDecimal.ROUND_HALF_UP));
+            BigDecimal high = prev[0].add(new BigDecimal(value).divide(new BigDecimal(textLength[0]), 32, BigDecimal.ROUND_HALF_UP));
             mMap.put(key, new MathNode(prev[0], high));
             prev[0] = high;
         });
@@ -220,12 +223,10 @@ public class Main {
                     newLow = newLow.multiply(toMult).subtract(toMinus).setScale(32, BigDecimal.ROUND_FLOOR);
                     newHigh = newHigh.multiply(toMult).subtract(toMinus).setScale(32, BigDecimal.ROUND_CEILING);
                 }
-                
 
                 oldLow = newLow;
                 oldHigh = newHigh;
             }
-
 
             res.append(oldLow.setScale(32, BigDecimal.ROUND_HALF_UP).unscaledValue());
             File file = new File("arithmetic_" + textLength[0] + ".bin");

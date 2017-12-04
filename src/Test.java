@@ -8,7 +8,7 @@ import java.util.Queue;
 public class Test {
     public static void main(String[] args) {
         double a = 0;
-        BigDecimal bd = new BigDecimal("0.12345");
+        BigDecimal bd = new BigDecimal("1.12345");
         System.out.println(bd.unscaledValue());
     }
 }
