@@ -16,10 +16,11 @@ public class Main {
 
 
     public static void main(String[] args) throws IOException {
-//        neededTextLenght = 1000;
+        neededTextLenght = 1000;
         System.out.println("Требуемое кол-во символов: " + neededTextLenght);
 
         SortedMap<String, Double> chars = new TreeMap<>(); // мап для обычной энтропии
+        SortedMap<String, Integer> charsMap = new TreeMap<>(); // мап для обычной энтропии
         SortedMap<String, Double> dMap = new TreeMap<>(); // для условной энтропии с учетом 1-го пред. символа
         SortedMap<String, Double> dMapUsl = new TreeMap<>();
         SortedMap<String, Double> trMap = new TreeMap<>(); // для условной энтропии с учетом 2-ух пред. символов
@@ -33,6 +34,10 @@ public class Main {
 
                 chars.putIfAbsent(textChar, 0D); // если в мапе нет значения для такого ключа, кладем туда 0
                 chars.put(textChar, chars.get(textChar) + 1); // в итоге получим кол-во вхождений каждого символа
+
+                charsMap.putIfAbsent(textChar, 0);
+                charsMap.put(textChar, charsMap.get(textChar) + 1); // в итоге получим кол-во вхождений каждого символа
+
 
                 if (prev != null) { // таким образом отбрасываем итерацию для первого символа, потому что пред. отсутствует
                     String s = prev + textChar;
@@ -94,29 +99,94 @@ public class Main {
 
         System.out.println("Условная энтропия с учетом двух пред. символов: " + -entropy2[0]);
 
-        System.out.println("Кодирование Шеннон-Фано учет вероятности отдельных букв");
-        codeDecodeShenonFano(chars, 1,"ShenonFano_1");
-        System.out.println("Кодирование Шеннон-Фано учет условной вероятности букв");
-        codeDecodeShenonFano(dMap, 2,  "ShenonFano_2" );
+//        System.out.println("Кодирование Шеннон-Фано учет вероятности отдельных букв");
+//        codeDecodeShenonFano(chars, 1,"ShenonFano_1");
+//        System.out.println("Кодирование Шеннон-Фано учет условной вероятности букв");
+//        codeDecodeShenonFano(dMap, 2,  "ShenonFano_2" );
+//
+//        System.out.println("Кодирование Хаффман учет вероятности отдельных букв");
+//        codeDecodeHaffman(chars, 1, "Haffman_1");
+//        System.out.println("Кодирование Хаффман учет условной вероятности букв");
+//        codeDecodeHaffman(dMap, 2, "Haffman_2");
 
-        System.out.println("Кодирование Хаффман учет вероятности отдельных букв");
-        codeDecodeHaffman(chars, 1, "Haffman_1");
-        System.out.println("Кодирование Хаффман учет условной вероятности букв");
-        codeDecodeHaffman(dMap, 2, "Haffman_2");
-
-        arithmeticEncoding(chars);
+        arithmeticEncoding(charsMap);
+//        adaptiveEncoding(chars);
     }
 
-    public static void arithmeticEncoding(SortedMap<String, Double> chars) {
+    public static void adaptiveEncoding(SortedMap<String, Double> chars) {
+        SortedMap<String, Double> charsCopy = new TreeMap<>(chars);
+        SortedMap<String, Double> countMap = new TreeMap<>(chars);
         SortedMap<String, MathNode> mMap = new TreeMap<>();
+
+        final Integer[] charCount = {chars.size()};
+        charsCopy.forEach((key, value) -> {
+            charsCopy.put(key, 1D / charCount[0]);
+            countMap.put(key, 1D);
+        });
+
+        BigDecimal oldLow = new BigDecimal(0);
+        BigDecimal oldHigh = new BigDecimal(1);
+
+        StringBuilder res = new StringBuilder();
+
+        try (FileReader reader = new FileReader("in.txt")) {
+            int c;
+            int count = 0;
+            while ((c = reader.read()) != -1 && count < textLength[0]) {
+                final BigDecimal[] prev = {new BigDecimal(0)};
+                charsCopy.forEach((key, value) -> {
+                    BigDecimal high = prev[0].add(new BigDecimal(value)).setScale(16, BigDecimal.ROUND_HALF_UP);
+                    mMap.put(key, new MathNode(prev[0], high));
+                    prev[0] = high;
+                });
+
+                String textChar = String.valueOf((char) c);
+
+                count++;
+
+                BigDecimal newLow = getLow(oldLow, oldHigh, mMap, textChar);
+                BigDecimal newHigh = getHigh(oldLow, oldHigh, mMap, textChar);
+
+                String similar = getEqualsPart(newLow, newHigh);
+                if (StringUtils.isNotBlank(similar)) {
+                    res.append(similar);
+
+                    BigDecimal toMult = new BigDecimal(pow(10, similar.length()));
+                    BigDecimal toMinus = new BigDecimal(similar);
+                    newLow = newLow.multiply(toMult).subtract(toMinus).setScale(16, BigDecimal.ROUND_HALF_UP);
+                    newHigh = newHigh.multiply(toMult).subtract(toMinus).setScale(16, BigDecimal.ROUND_HALF_UP);
+                }
+
+                oldLow = newLow;
+                oldHigh = newHigh;
+
+                charCount[0]++;
+                countMap.put(textChar, countMap.get(textChar) + 1);
+
+                charsCopy.forEach((key, value) -> {
+                    charsCopy.put(key, countMap.get(key) / charCount[0]);
+                });
+            }
+
+            File file = new File("adaptive_" + textLength[0] + ".bin");
+            res.append(oldLow.toString().substring(2));
+
+            writeResToFile(res.toString(), file, false);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public static void arithmeticEncoding(SortedMap<String, Integer> chars) {
+        SortedMap<String, MathNode> mMap = new TreeMap<>();
+
         final BigDecimal[] prev = {new BigDecimal(0)};
 
         chars.forEach((key, value) -> {
-            BigDecimal high = prev[0].add(new BigDecimal(value)).setScale(16, BigDecimal.ROUND_HALF_UP);
+            BigDecimal high = prev[0].add(new BigDecimal(value).divide(new BigDecimal(textLength[0]), 16, BigDecimal.ROUND_HALF_UP));
             mMap.put(key, new MathNode(prev[0], high));
             prev[0] = high;
         });
-
         BigDecimal oldLow = new BigDecimal(0);
         BigDecimal oldHigh = new BigDecimal(1);
 
@@ -147,41 +217,58 @@ public class Main {
 
             File file = new File("arithmetic_" + textLength[0] + ".bin");
 //            try (FileWriter dos = new FileWriter(file)) {
-            try (DataOutputStream dos = new DataOutputStream(new FileOutputStream(file))) {
-                long lng = 0L;
-                String resStr = res.toString();
-                int lastInd = 0;
-                while (StringUtils.isNotBlank(resStr)) {
-                    boolean catchError = false;
+//            writeResToFile(res.toString(), file, true);
+            BigDecimal bd = new BigDecimal(res.toString());
+            FileOutputStream fos = new FileOutputStream(file);
+            fos.write(bd.unscaledValue().toByteArray());
+            System.out.println(bd.unscaledValue());
+            System.out.println((double)(file.length() * 8) / 1000);
+        } catch (IOException ex) {
+            System.out.println(ex.getMessage());
+        }
+    }
 
-                    for (int i = 1; i < resStr.length() + 1; i++) {
-                        lastInd = i;
-                        try {
-                            lng = Long.parseLong(resStr.substring(0, i));
-                        } catch (Exception e) {
-                            catchError = true;
-                            break;
-                        }
-                    }
+    public static void writeResToFile(String res, File file, boolean isArithmetic) {
+//            try (FileWriter dos = new FileWriter(file)) {
+        try (DataOutputStream dos = new DataOutputStream(new FileOutputStream(file))) {
+            long lng = 0L;
+            String resStr = res;
+            System.out.println(res.length());
+            int lastInd = 0;
+            while (StringUtils.isNotBlank(resStr)) {
+                boolean catchError = false;
 
-                    dos.writeLong(lng);
-                    resStr = resStr.substring(lastInd - 1);
-                    lng = 0;
-
-                    if (!catchError) {
+                for (int i = 1; i < resStr.length() + 1; i++) {
+                    lastInd = i;
+                    try {
+                        lng = Long.parseLong(resStr.substring(0, i));
+                    } catch (Exception e) {
+                        catchError = true;
                         break;
                     }
                 }
 
-//                dos.write(resStr);
-                dos.flush();
-                dos.close();
+                dos.writeLong(lng);
+                resStr = resStr.substring(lastInd - 1);
+                lng = 0;
+
+                if (!catchError) {
+                    break;
+                }
             }
 
-            Long fileLenBits = file.length() * 8;
+//                dos.write(resStr);
+            dos.flush();
+            dos.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        Long fileLenBits = file.length() * 8;
+        if (isArithmetic) {
             System.out.println("Арифметическое кодирование (" + textLength[0] + " символов). Бит на символ = " + fileLenBits.doubleValue() / textLength[0]);
-        } catch (IOException ex) {
-            System.out.println(ex.getMessage());
+        } else {
+            System.out.println("Адаптивное кодирование (" + textLength[0] + " символов). Бит на символ = " + fileLenBits.doubleValue() / textLength[0]);
         }
     }
 
@@ -345,7 +432,6 @@ public class Main {
         code = "";
         left = "";
         decodeFile(fileName, root);
-        //dsfjsdjfj
     }
 
     private static void codeDecodeHaffman(SortedMap<String, Double> chars, int len, String fileName) {
