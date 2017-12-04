@@ -2,7 +2,10 @@ import org.apache.commons.lang.StringUtils;
 
 import java.io.*;
 import java.math.BigDecimal;
+import java.math.MathContext;
 import java.util.*;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 public class Main {
@@ -114,6 +117,7 @@ public class Main {
     }
 
     public static void adaptiveEncoding(SortedMap<String, Double> chars) {
+        ExecutorService threadPool = Executors.newFixedThreadPool(8);
         SortedMap<String, Double> charsCopy = new TreeMap<>(chars);
         SortedMap<String, Double> countMap = new TreeMap<>(chars);
         SortedMap<String, MathNode> mMap = new TreeMap<>();
@@ -143,6 +147,8 @@ public class Main {
                 String textChar = String.valueOf((char) c);
 
                 count++;
+
+                BigDecimal dif = oldHigh.subtract(oldLow);
 
                 BigDecimal newLow = getLow(oldLow, oldHigh, mMap, textChar);
                 BigDecimal newHigh = getHigh(oldLow, oldHigh, mMap, textChar);
@@ -189,8 +195,10 @@ public class Main {
         });
         BigDecimal oldLow = new BigDecimal(0);
         BigDecimal oldHigh = new BigDecimal(1);
+        BigDecimal newLow;
+        BigDecimal newHigh;
 
-        StringBuilder res = new StringBuilder();
+//        StringBuilder res = new StringBuilder();
 
         try (FileReader reader = new FileReader("in.txt")) {
             int c;
@@ -199,30 +207,22 @@ public class Main {
                 String textChar = String.valueOf((char) c);
                 count++;
 
-                oldLow = getLow(oldLow, oldHigh, mMap, textChar);
-                oldHigh = getHigh(oldLow, oldHigh, mMap, textChar);
+                BigDecimal dif = oldHigh.subtract(oldLow);
+                newLow = oldLow.add(dif.multiply(mMap.get(textChar).getLow()));
+                newHigh = oldLow.add(dif.multiply(mMap.get(textChar).getHigh()));
 
-                String similar = getEqualsPart(oldLow, oldHigh);
-                if (StringUtils.isNotBlank(similar)) {
-                    res.append(similar);
-
-                    BigDecimal toMult = new BigDecimal(pow(10, similar.length()));
-                    BigDecimal toMinus = new BigDecimal(similar);
-                    oldLow = oldLow.multiply(toMult).subtract(toMinus).setScale(16, BigDecimal.ROUND_HALF_UP);
-                    oldHigh = oldHigh.multiply(toMult).subtract(toMinus).setScale(16, BigDecimal.ROUND_HALF_UP);
-                }
+                oldLow = newLow;
+                oldHigh = newHigh;
             }
 
-            res.append(oldLow.toString().substring(2));
+            String similar = getEqualsPart(oldLow, oldHigh);
+            oldLow = oldLow.setScale(similar.length() + 3, BigDecimal.ROUND_HALF_UP);
 
+            System.out.println(similar.length() + 3);
             File file = new File("arithmetic_" + textLength[0] + ".bin");
-//            try (FileWriter dos = new FileWriter(file)) {
-//            writeResToFile(res.toString(), file, true);
-            BigDecimal bd = new BigDecimal(res.toString());
             FileOutputStream fos = new FileOutputStream(file);
-            fos.write(bd.unscaledValue().toByteArray());
-            System.out.println(bd.unscaledValue());
-            System.out.println((double)(file.length() * 8) / 1000);
+            fos.write(oldLow.unscaledValue().toByteArray());
+            System.out.println("Арифметическое кодирование (" + textLength[0] + " символов ): " + (double)(file.length() * 8) / textLength[0]);
         } catch (IOException ex) {
             System.out.println(ex.getMessage());
         }
@@ -281,14 +281,18 @@ public class Main {
         return res;
     }
 
-    private static BigDecimal getHigh(BigDecimal oldLow, BigDecimal oldHigh, Map<String, MathNode> map, String s) {
-        BigDecimal dif = oldHigh.subtract(oldLow).setScale(16, BigDecimal.ROUND_HALF_UP);
-        return oldLow.add(dif.multiply(map.get(s).getHigh())).setScale(16, BigDecimal.ROUND_HALF_UP);
+    private static BigDecimal getHigh(BigDecimal oldLow, BigDecimal dif, Map<String, MathNode> map, String s) {
+//        BigDecimal dif = oldHigh.subtract(oldLow).setScale(16, BigDecimal.ROUND_HALF_UP);
+//        return oldLow.add(dif.multiply(map.get(s).getHigh())).setScale(16, BigDecimal.ROUND_HALF_UP);
+
+        return oldLow.add(dif.multiply(map.get(s).getHigh()));
     }
 
-    private static BigDecimal getLow(BigDecimal oldLow, BigDecimal oldHigh, Map<String, MathNode> map, String s) {
-        BigDecimal dif = oldHigh.subtract(oldLow).setScale(16, BigDecimal.ROUND_HALF_UP);
-        return oldLow.add(dif.multiply(map.get(s).getLow())).setScale(16, BigDecimal.ROUND_HALF_UP);
+    private static BigDecimal getLow(BigDecimal oldLow, BigDecimal dif, Map<String, MathNode> map, String s) {
+//        BigDecimal dif = oldHigh.subtract(oldLow).setScale(16, BigDecimal.ROUND_HALF_UP);
+//        return oldLow.add(dif.multiply(map.get(s).getLow())).setScale(16, BigDecimal.ROUND_HALF_UP);
+
+        return oldLow.add(dif.multiply(map.get(s).getLow()));
     }
 
     private static String getEqualsPart(BigDecimal bd1, BigDecimal bd2) {
@@ -534,5 +538,212 @@ public class Main {
         } catch (IOException ignored) {
 
         }
+    }
+
+    static void thMethod () throws IOException {
+        Map<String, Integer> map = new HashMap<>();
+        Map<String, Integer> letterMap = new HashMap<>();
+        BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(new File("in.txt"))));
+        char prev = (char) reader.read();
+        int c;
+        int letterCount = 0;
+        StringBuilder sb = new StringBuilder();
+        while ((c = reader.read()) != -1) {
+            char ch = (char) c;
+            sb.append(String.valueOf(ch));
+            String s = String.valueOf(prev) + String.valueOf(ch);
+            if (map.containsKey(s)) {
+                map.put(s, map.get(s) + 1);
+            } else {
+                map.put(s, 1);
+            }
+            String stringPrev = String.valueOf(prev);
+            if (letterMap.containsKey(stringPrev)) {
+                letterMap.put(stringPrev, letterMap.get(stringPrev) + 1);
+            } else {
+                letterMap.put(stringPrev, 1);
+            }
+
+            prev = ch;
+            letterCount++;
+        }
+        Map<String, BigDecimal> letterProbabilityMap = new HashMap<>();
+        Set<String> letterKeySet = letterMap.keySet();
+        for (String let : letterKeySet) {
+            BigDecimal letterProbability = new BigDecimal(letterMap.get(let)).divide(new BigDecimal(letterCount), 32, BigDecimal.ROUND_DOWN);
+            letterProbabilityMap.put(let, letterProbability);
+        }
+        List<String> lettersList = new ArrayList<>();
+        lettersList.addAll(letterKeySet);
+        String str = sb.toString();
+        BigDecimal start = new BigDecimal(0);
+        BigDecimal end = new BigDecimal(0);
+        BigDecimal range = new BigDecimal(1);
+        for (int i = 0; i < 1000; i++) {
+            String letter = String.valueOf(str.charAt(i));
+
+            BigDecimal probability = letterProbabilityMap.get(lettersList.get(0));
+            BigDecimal theNumber = probability.multiply(range);
+
+            int j = 0;
+            if (!lettersList.get(0).equals(letter)) {
+                j = 1;
+                for (; j < lettersList.size() && !lettersList.get(j).equals(letter); j++) {
+                    theNumber = theNumber.add(letterProbabilityMap.get(lettersList.get(j)).multiply(range));
+                }
+            }
+            if (!lettersList.get(0).equals(letter)) {
+                start = start.add(theNumber);
+            }
+
+            end = start.add(letterProbabilityMap.get(lettersList.get(j)).multiply(range));
+            range =  end.subtract(start);
+        }
+        System.out.println(start);
+        System.out.println(end);
+        int i = 0;
+        for (; range.compareTo(new BigDecimal(1)) < 0; i++) {
+            range = range.multiply(new BigDecimal(10));
+        }
+        BigDecimal result = start.round(new MathContext(i));
+        byte[] arr = result.unscaledValue().toByteArray();
+//        System.out.println(arr.length);
+        File f1 = new File("arifm");
+        FileOutputStream fos1 = new FileOutputStream(f1);
+        fos1.write(arr);
+        fos1.close();
+        System.out.println("Арифметическая. Бит/символ: " + ((double)f1.length())/125);
+
+        Map<String, Integer> slogMap = new HashMap<>();
+
+        String prevLetter = String.valueOf(str.charAt(0));
+        for (int j = 1; j < str.length(); j++) {
+            String letter = String.valueOf(str.charAt(j));
+            String combination = prevLetter + letter;
+            if (slogMap.containsKey(combination)) {
+                Integer num = slogMap.get(combination);
+                slogMap.put(combination, num + 1);
+            } else {
+                slogMap.put(combination, 1);
+            }
+            prevLetter = letter;
+        }
+
+        Map<String, BigDecimal> slogProbabilityMap = new HashMap<>();
+        for (String slog : slogMap.keySet()) {
+            int count = 0;
+            for (String curSlog : slogMap.keySet()) {
+                if (curSlog.charAt(0) == slog.charAt(0)) {
+                    count += slogMap.get(curSlog);
+                }
+            }
+            slogProbabilityMap.put(slog, new BigDecimal(slogMap.get(slog)).divide(new BigDecimal(count), 32, BigDecimal.ROUND_DOWN));
+        }
+
+        lettersList = new ArrayList<>();
+        lettersList.addAll(slogMap.keySet());
+        Map<String, List<String>> lettersListMap = new HashMap<>();
+        for (String s : slogMap.keySet()) {
+            if (lettersListMap.containsKey(String.valueOf(s.charAt(0)))) {
+                lettersListMap.get(String.valueOf(s.charAt(0))).add(String.valueOf(s.charAt(1)));
+            } else {
+                List<String> l = new ArrayList<>();
+                l.add(String.valueOf(s.charAt(1)));
+                lettersListMap.put(String.valueOf(s.charAt(0)), l);
+            }
+        }
+
+        start = new BigDecimal(0);
+        end = new BigDecimal(0);
+        range = new BigDecimal(1);
+
+        for (int k = 1; k < 1000; k++) {
+            String letter = String.valueOf(str.charAt(k));
+            String previousLetter = String.valueOf(str.charAt(k - 1));
+            List<String> theList = lettersListMap.get(previousLetter);
+            BigDecimal probability = slogProbabilityMap.get(previousLetter + theList.get(0));
+            BigDecimal theNumber = probability.multiply(range);
+
+            int j = 0;
+            if (!theList.get(0).equals(letter)) {
+                j = 1;
+                for (; j < lettersListMap.get(previousLetter).size() && !lettersListMap.get(previousLetter).get(j).equals(letter); j++) {
+                    theNumber = theNumber.add(slogProbabilityMap.get(previousLetter + lettersListMap.get(previousLetter).get(j)).multiply(range));
+                }
+            }
+            if (!lettersListMap.get(previousLetter).get(0).equals(letter)) {
+                start = start.add(theNumber);
+            }
+
+            end = start.add(slogProbabilityMap.get(previousLetter + lettersListMap.get(previousLetter).get(j)).multiply(range));
+            range =  end.subtract(start);
+        }
+        System.out.println(start);
+        System.out.println(end);
+        i = 0;
+        for (; range.compareTo(new BigDecimal(1)) < 0; i++) {
+            range = range.multiply(new BigDecimal(10));
+        }
+        result = start.round(new MathContext(i));
+        arr = result.unscaledValue().toByteArray();
+
+        File f = new File("arifm2");
+        FileOutputStream fos = new FileOutputStream(f);
+        fos.write(arr);
+        fos.close();
+        System.out.println("С учетом пред. символа. Бит/символ: " + ((double)f.length())/125);
+
+        letterCount = letterProbabilityMap.keySet().size();
+        Map<String, BigDecimal> letterCountMap = new HashMap<>();
+        for (String letter : letterProbabilityMap.keySet()) {
+            letterCountMap.put(letter, new BigDecimal(1));
+        }
+        for (String letter : letterProbabilityMap.keySet()) {
+            letterProbabilityMap.put(letter, letterCountMap.get(letter).divide(new BigDecimal(letterCount), 32, BigDecimal.ROUND_DOWN));
+        }
+        start = new BigDecimal(0);
+        end = new BigDecimal(0);
+        range = new BigDecimal(1);
+        lettersList.clear();
+        lettersList.addAll(letterCountMap.keySet());
+        for (int r = 0; r < 1001; r++) {
+            String letter = String.valueOf(str.charAt(r));
+
+            letterCountMap.put(letter, letterCountMap.get(letter).add(new BigDecimal(1)));
+            letterCount++;
+            for (String letter1 : letterProbabilityMap.keySet()) {
+                letterProbabilityMap.put(letter1, letterCountMap.get(letter1).divide(new BigDecimal(letterCount), 32, BigDecimal.ROUND_DOWN));
+            }
+            BigDecimal probability = letterProbabilityMap.get(lettersList.get(0));
+            BigDecimal theNumber = probability.multiply(range);
+
+            int j = 0;
+            if (!lettersList.get(0).equals(letter)) {
+                j = 1;
+                for (; j < lettersList.size() && !lettersList.get(j).equals(letter); j++) {
+                    theNumber = theNumber.add(letterProbabilityMap.get(lettersList.get(j)).multiply(range));
+                }
+            }
+            if (!lettersList.get(0).equals(letter)) {
+                start = start.add(theNumber);
+            }
+
+            end = start.add(letterProbabilityMap.get(lettersList.get(j)).multiply(range));
+            range =  end.subtract(start);
+        }
+        System.out.println(start);
+        System.out.println(end);
+        int r = 0;
+        for (; range.compareTo(new BigDecimal(1)) < 0; r++) {
+            range = range.multiply(new BigDecimal(10));
+        }
+        result = start.round(new MathContext(r));
+        arr = result.unscaledValue().toByteArray();
+//        System.out.println(arr.length);
+        f1 = new File("adaptive");
+        fos1 = new FileOutputStream(f1);
+        fos1.write(arr);
+        fos1.close();
+        System.out.println("Адаптивная. Бит/символ: " + ((double)f1.length())/(125));
     }
 }
